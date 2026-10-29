@@ -1,0 +1,36 @@
+services:
+  mongo:
+    image: mongo:8.2
+    # Single-node replica set: multi-document transactions require one.
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiates the replica set on first boot, then reports healthy once primary.
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) {
+          rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"
+      interval: 5s
+      timeout: 10s
+      start_period: 10s
+      retries: 20
+
+  api:
+    build: .
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      DB_URL: mongodb://mongo:27017/harmattan?directConnection=true
+      FX_PROVIDER_URL: https://open.er-api.com/v6/latest/USD
+      FX_REFRESH_INTERVAL_MS: 600000
+      FX_MAX_RATE_AGE_MS: 86400000
+    ports:
+      - '3000:3000'
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
