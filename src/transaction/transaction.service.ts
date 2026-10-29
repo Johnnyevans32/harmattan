@@ -28,6 +28,7 @@ import type { PaginationMetaDataDto } from '@/core/response';
 import { Stablecoin } from '@/enums/stablecoin.enum';
 import { TransactionType } from '@/enums/transaction-type.enum';
 import { FxService } from '@/fx/fx.service';
+import type { WalletDocument } from '@/wallet/schemas/wallet.schema';
 import { WalletService } from '@/wallet/wallet.service';
 import type {
   DepositDto,
@@ -52,6 +53,9 @@ type Movement = Omit<
   'initiatorWalletId' | 'idempotencyKey' | 'requestHash' | 'createdAt'
 >;
 
+/** Canonical amount so "100" and "100.00" fingerprint identically. */
+const normalise = (amount: string): string => toMoney(amount).toFixed();
+
 const TRANSACTION_OPTIONS: mongo.TransactionOptions = {
   readPreference: 'primary',
   readConcern: { level: 'snapshot' },
@@ -73,31 +77,24 @@ export class TransactionService {
     dto: DepositDto,
     idempotencyKey: string,
   ): Promise<IdempotentResult> {
-    const amount = this.parseAmount(dto.amount, dto.currency);
-
     return this.executeOnce(
       walletId,
       idempotencyKey,
-      {
-        type: TransactionType.DEPOSIT,
-        currency: dto.currency,
-        amount: amount.toFixed(),
-      },
+      { type: TransactionType.DEPOSIT, amount: normalise(dto.amount) },
       async (session) => {
-        await this.walletService.credit(
+        const wallet = await this.walletService.findByIdOrFail(
           walletId,
-          dto.currency,
-          amount,
           session,
         );
+        const amount = this.parseAmount(dto.amount, wallet.currency);
 
+        await this.walletService.credit(wallet, amount, session);
         return this.movement(
           TransactionType.DEPOSIT,
           null,
-          walletId,
-          dto.currency,
+          wallet,
+          wallet.currency,
           amount,
-          dto.currency,
         );
       },
     );
@@ -108,40 +105,41 @@ export class TransactionService {
     dto: SwapDto,
     idempotencyKey: string,
   ): Promise<IdempotentResult> {
-    if (dto.fromCurrency === dto.toCurrency) {
-      throw new BadRequestException(
-        'fromCurrency and toCurrency must be different',
-      );
-    }
-    const amount = this.parseAmount(dto.amount, dto.fromCurrency);
-
     return this.executeOnce(
       walletId,
       idempotencyKey,
       {
         type: TransactionType.SWAP,
-        fromCurrency: dto.fromCurrency,
         toCurrency: dto.toCurrency,
-        amount: amount.toFixed(),
+        amount: normalise(dto.amount),
       },
       async (session) => {
-        const movement = this.movement(
-          TransactionType.SWAP,
+        const source = await this.walletService.findByIdOrFail(
           walletId,
-          walletId,
-          dto.fromCurrency,
-          amount,
-          dto.toCurrency,
-        );
-        await this.walletService.debit(
-          walletId,
-          dto.fromCurrency,
-          amount,
           session,
         );
-        await this.walletService.credit(
-          walletId,
+        if (source.currency === dto.toCurrency) {
+          throw new BadRequestException(
+            `This wallet already holds ${dto.toCurrency}; choose a different toCurrency`,
+          );
+        }
+        const amount = this.parseAmount(dto.amount, source.currency);
+        const destination = await this.walletService.findUserWallet(
+          source.userId,
           dto.toCurrency,
+          session,
+        );
+
+        const movement = this.movement(
+          TransactionType.SWAP,
+          source,
+          destination,
+          source.currency,
+          amount,
+        );
+        await this.walletService.debit(source, amount, session);
+        await this.walletService.credit(
+          destination,
           toMoney(movement.destinationAmount),
           session,
         );
@@ -156,12 +154,8 @@ export class TransactionService {
     idempotencyKey: string,
   ): Promise<IdempotentResult> {
     if (dto.recipientWalletId === walletId) {
-      throw new BadRequestException(
-        'Cannot transfer to the same wallet; use a swap instead',
-      );
+      throw new BadRequestException('Cannot transfer to the same wallet');
     }
-    const destinationCurrency = dto.destinationCurrency ?? dto.sourceCurrency;
-    const amount = this.parseAmount(dto.amount, dto.sourceCurrency);
 
     return this.executeOnce(
       walletId,
@@ -169,49 +163,62 @@ export class TransactionService {
       {
         type: TransactionType.TRANSFER,
         recipientWalletId: dto.recipientWalletId,
-        sourceCurrency: dto.sourceCurrency,
-        destinationCurrency,
-        amount: amount.toFixed(),
+        amount: normalise(dto.amount),
       },
       async (session) => {
-        const movement = this.movement(
-          TransactionType.TRANSFER,
+        const source = await this.walletService.findByIdOrFail(
           walletId,
-          dto.recipientWalletId,
-          dto.sourceCurrency,
-          amount,
-          destinationCurrency,
-        );
-        await this.walletService.debit(
-          walletId,
-          dto.sourceCurrency,
-          amount,
           session,
         );
-        await this.walletService.credit(
+        const recipient = await this.walletService.findByIdOrFail(
           dto.recipientWalletId,
-          destinationCurrency,
-          toMoney(movement.destinationAmount),
           session,
           'Recipient wallet not found',
+        );
+        if (recipient.userId.equals(source.userId)) {
+          throw new BadRequestException(
+            'Cannot transfer between your own wallets; use a swap instead',
+          );
+        }
+        const amount = this.parseAmount(dto.amount, source.currency);
+
+        const movement = this.movement(
+          TransactionType.TRANSFER,
+          source,
+          recipient,
+          source.currency,
+          amount,
+        );
+        await this.walletService.debit(source, amount, session);
+        await this.walletService.credit(
+          recipient,
+          toMoney(movement.destinationAmount),
+          session,
         );
         return movement;
       },
     );
   }
 
+  /** History for one wallet or for all of a user's wallets. */
   async list(
-    walletId: string,
+    scope: { walletId: string } | { userId: string },
     query: TransactionQueryDto,
   ): Promise<{
     transactions: TransactionResponseDto[];
     metadata: PaginationMetaDataDto;
   }> {
     const { page, limit, type, currency, startDate, endDate } = query;
-    const id = new Types.ObjectId(walletId);
+    const [sender, receiver] =
+      'walletId' in scope
+        ? ['senderWalletId', 'receiverWalletId']
+        : ['senderUserId', 'receiverUserId'];
+    const id = new Types.ObjectId(
+      'walletId' in scope ? scope.walletId : scope.userId,
+    );
 
     const conditions: FilterQuery<TransactionDocument>[] = [
-      { $or: [{ senderWalletId: id }, { receiverWalletId: id }] },
+      { $or: [{ [sender]: id }, { [receiver]: id }] },
     ];
     if (type) conditions.push({ type });
     if (currency) {
@@ -321,12 +328,12 @@ export class TransactionService {
   /** Prices a movement at the current rate. Same-currency moves use rate 1. */
   private movement(
     type: TransactionType,
-    senderWalletId: string | null,
-    receiverWalletId: string,
+    sender: WalletDocument | null,
+    receiver: WalletDocument,
     sourceCurrency: Stablecoin,
     sourceAmount: Money,
-    destinationCurrency: Stablecoin,
   ): Movement {
+    const destinationCurrency = receiver.currency;
     const converts = sourceCurrency !== destinationCurrency;
     const pair = converts
       ? this.fxService.getRate(sourceCurrency, destinationCurrency)
@@ -342,10 +349,10 @@ export class TransactionService {
 
     return {
       type,
-      senderWalletId: senderWalletId
-        ? new Types.ObjectId(senderWalletId)
-        : null,
-      receiverWalletId: new Types.ObjectId(receiverWalletId),
+      senderUserId: sender?.userId ?? null,
+      senderWalletId: sender?._id ?? null,
+      receiverUserId: receiver.userId,
+      receiverWalletId: receiver._id,
       sourceCurrency,
       sourceAmount: toDecimal128(sourceAmount),
       destinationCurrency,
@@ -373,7 +380,9 @@ export class TransactionService {
     return {
       id: transaction.id as string,
       type: transaction.type,
+      senderUserId: transaction.senderUserId?.toString() ?? null,
       senderWalletId: transaction.senderWalletId?.toString() ?? null,
+      receiverUserId: transaction.receiverUserId.toString(),
       receiverWalletId: transaction.receiverWalletId.toString(),
       sourceCurrency: transaction.sourceCurrency,
       sourceAmount: formatAmount(

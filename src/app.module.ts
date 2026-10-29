@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import configuration from './core/configuration';
 import { FxModule } from './fx/fx.module';
 import { TransactionModule } from './transaction/transaction.module';
+import { UserModule } from './user/user.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => ({ uri: configuration().database.url }),
     }),
     FxModule,
+    UserModule,
     WalletModule,
     TransactionModule,
   ],

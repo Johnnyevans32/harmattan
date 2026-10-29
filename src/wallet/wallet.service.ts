@@ -1,19 +1,15 @@
 import {
-  ConflictException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import Decimal from 'decimal.js';
-import { parsePhoneNumberWithError } from 'libphonenumber-js';
-import type { ClientSession, Model } from 'mongoose';
+import type { ClientSession, Model, Types } from 'mongoose';
 import { DB_TABLE_NAMES, VALUATION_CURRENCY } from '@/core/constants';
-import { isDuplicateKeyError } from '@/core/helpers';
 import { formatAmount, Money, toDecimal128, toMoney } from '@/core/money';
 import { STABLECOINS, Stablecoin } from '@/enums/stablecoin.enum';
 import { FxService } from '@/fx/fx.service';
-import type { CreateWalletDto } from './dto/wallet.dto';
 import type { WalletResponseDto } from './dto/wallet-response.dto';
 import type { WalletDocument } from './schemas/wallet.schema';
 
@@ -25,57 +21,70 @@ export class WalletService {
     private readonly fxService: FxService,
   ) {}
 
-  async create(dto: CreateWalletDto): Promise<WalletResponseDto> {
-    const email = dto.email?.trim().toLowerCase();
-    const phone = dto.phone && parsePhoneNumberWithError(dto.phone).number;
+  /** Opens one zero-balance wallet per supported coin for a new user. */
+  async createForUser(
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<WalletDocument[]> {
+    return this.walletModel.create(
+      STABLECOINS.map((currency) => ({ userId, currency })),
+      { session, ordered: true },
+    );
+  }
 
-    const existing = await this.walletModel
-      .findOne({
-        $or: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])],
-      })
-      .lean();
-    if (existing) {
-      throw this.duplicateContactError(
-        email && existing.email === email ? 'email' : 'phone',
-      );
+  async findByIdOrFail(
+    walletId: string,
+    session?: ClientSession,
+    notFoundMessage = 'Wallet not found',
+  ): Promise<WalletDocument> {
+    const wallet = await this.walletModel
+      .findById(walletId)
+      .session(session ?? null);
+    if (!wallet) {
+      throw new NotFoundException(notFoundMessage);
     }
+    return wallet;
+  }
 
-    try {
-      const wallet = await this.walletModel.create({ email, phone });
-      return this.mapToResponse(wallet);
-    } catch (error) {
-      // Lost a race with a concurrent request for the same contact.
-      if (isDuplicateKeyError(error)) {
-        throw this.duplicateContactError(
-          error.keyPattern && 'phone' in error.keyPattern ? 'phone' : 'email',
-        );
-      }
-      throw error;
+  async findUserWallet(
+    userId: Types.ObjectId,
+    currency: Stablecoin,
+    session: ClientSession,
+  ): Promise<WalletDocument> {
+    const wallet = await this.walletModel
+      .findOne({ userId, currency })
+      .session(session);
+    if (!wallet) {
+      throw new NotFoundException(`No ${currency} wallet found for this user`);
     }
+    return wallet;
+  }
+
+  /** The user's wallets in canonical coin order. */
+  async findByUser(userId: Types.ObjectId): Promise<WalletDocument[]> {
+    const wallets = await this.walletModel.find({ userId });
+    return wallets.sort(
+      (a, b) =>
+        STABLECOINS.indexOf(a.currency) - STABLECOINS.indexOf(b.currency),
+    );
   }
 
   async findById(walletId: string): Promise<WalletResponseDto> {
-    const wallet = await this.walletModel.findById(walletId);
-    if (!wallet) {
-      throw new NotFoundException('Wallet not found');
-    }
-    return this.mapToResponse(wallet);
+    return this.mapToResponse(await this.findByIdOrFail(walletId));
   }
 
   async credit(
-    walletId: string,
-    currency: Stablecoin,
+    wallet: WalletDocument,
     amount: Money,
     session: ClientSession,
-    notFoundMessage = 'Wallet not found',
   ): Promise<void> {
     const { matchedCount } = await this.walletModel.updateOne(
-      { _id: walletId },
-      { $inc: { [`balances.${currency}`]: toDecimal128(amount) } },
+      { _id: wallet._id },
+      { $inc: { balance: toDecimal128(amount) } },
       { session },
     );
     if (matchedCount === 0) {
-      throw new NotFoundException(notFoundMessage);
+      throw new NotFoundException('Wallet not found');
     }
   }
 
@@ -84,56 +93,39 @@ export class WalletService {
    * single server-side operation, so concurrent debits can never overdraw.
    */
   async debit(
-    walletId: string,
-    currency: Stablecoin,
+    wallet: WalletDocument,
     amount: Money,
     session: ClientSession,
   ): Promise<void> {
-    const path = `balances.${currency}`;
     const { matchedCount } = await this.walletModel.updateOne(
-      { _id: walletId, [path]: { $gte: toDecimal128(amount) } },
-      { $inc: { [path]: toDecimal128(amount.neg()) } },
+      { _id: wallet._id, balance: { $gte: toDecimal128(amount) } },
+      { $inc: { balance: toDecimal128(amount.neg()) } },
       { session },
     );
-    if (matchedCount > 0) return;
-
-    const exists = await this.walletModel
-      .exists({ _id: walletId })
-      .session(session);
-    if (!exists) {
-      throw new NotFoundException('Wallet not found');
+    if (matchedCount === 0) {
+      throw new UnprocessableEntityException(
+        `Insufficient ${wallet.currency} balance`,
+      );
     }
-    throw new UnprocessableEntityException(`Insufficient ${currency} balance`);
   }
 
-  private mapToResponse(wallet: WalletDocument): WalletResponseDto {
-    let totalUsd = new Money(0);
+  usdValueOf(wallet: WalletDocument): Money {
+    return toMoney(wallet.balance).mul(
+      this.fxService.getRate(wallet.currency, VALUATION_CURRENCY).rate,
+    );
+  }
 
-    const balances = STABLECOINS.map((currency) => {
-      const amount = toMoney(wallet.balances[currency]);
-      const usdValue = amount.mul(
-        this.fxService.getRate(currency, VALUATION_CURRENCY).rate,
-      );
-      totalUsd = totalUsd.add(usdValue);
-
-      return {
-        currency,
-        amount: formatAmount(amount, currency),
-        usdValue: usdValue.toFixed(2, Decimal.ROUND_HALF_EVEN),
-      };
-    });
-
+  mapToResponse(wallet: WalletDocument): WalletResponseDto {
     return {
       id: wallet.id as string,
-      email: wallet.email,
-      phone: wallet.phone,
-      balances,
-      totalUsd: totalUsd.toFixed(2, Decimal.ROUND_HALF_EVEN),
+      userId: wallet.userId.toString(),
+      currency: wallet.currency,
+      balance: formatAmount(wallet.balance, wallet.currency),
+      usdValue: formatUsd(this.usdValueOf(wallet)),
       createdAt: wallet.createdAt,
     };
   }
-
-  private duplicateContactError(field: 'email' | 'phone'): ConflictException {
-    return new ConflictException(`A wallet already exists for this ${field}`);
-  }
 }
+
+export const formatUsd = (value: Money): string =>
+  value.toFixed(2, Decimal.ROUND_HALF_EVEN);

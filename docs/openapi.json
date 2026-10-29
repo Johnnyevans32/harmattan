@@ -164,17 +164,17 @@
         ]
       }
     },
-    "/api/v1/wallets": {
+    "/api/v1/users": {
       "post": {
-        "description": "Creates a multi-currency wallet with a zero balance in every supported stablecoin. An email or phone number can own only one wallet.",
-        "operationId": "WalletController_create",
+        "description": "Creates a user with one zero-balance wallet per supported stablecoin. An email or phone number can belong to only one user.",
+        "operationId": "UserController_create",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateWalletDto"
+                "$ref": "#/components/schemas/CreateUserDto"
               }
             }
           }
@@ -196,7 +196,7 @@
                           "example": 201
                         },
                         "data": {
-                          "$ref": "#/components/schemas/WalletResponseDto"
+                          "$ref": "#/components/schemas/UserResponseDto"
                         }
                       }
                     }
@@ -232,7 +232,7 @@
             }
           },
           "409": {
-            "description": "A wallet already exists for this email",
+            "description": "A user already exists for this email",
             "content": {
               "application/json": {
                 "schema": {
@@ -248,7 +248,7 @@
                         },
                         "message": {
                           "type": "string",
-                          "example": "A wallet already exists for this email"
+                          "example": "A user already exists for this email"
                         }
                       }
                     }
@@ -258,15 +258,89 @@
             }
           }
         },
-        "summary": "Create a wallet",
+        "summary": "Create a user",
         "tags": [
-          "Wallets"
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/users/{userId}": {
+      "get": {
+        "description": "Returns every wallet (one per coin) plus the total equivalent in USD.",
+        "operationId": "UserController_findOne",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "example": "6720c0f1a2b3c4d5e6f70812",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/UserResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "type": "number",
+                          "example": 404
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "User not found"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a user with all wallet balances",
+        "tags": [
+          "Users"
         ]
       }
     },
     "/api/v1/wallets/{walletId}": {
       "get": {
-        "description": "Returns every stablecoin balance plus the total equivalent in USD.",
+        "description": "A single-currency wallet with its balance and USD value.",
         "operationId": "WalletController_findOne",
         "parameters": [
           {
@@ -274,7 +348,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "example": "6720c0f1a2b3c4d5e6f70812",
+              "example": "6720c0f1a2b3c4d5e6f70813",
               "type": "string"
             }
           }
@@ -332,7 +406,7 @@
             }
           }
         },
-        "summary": "Get a wallet and its balances",
+        "summary": "Get a wallet",
         "tags": [
           "Wallets"
         ]
@@ -340,7 +414,7 @@
     },
     "/api/v1/wallets/{walletId}/deposits": {
       "post": {
-        "description": "Credits the wallet immediately and records a DEPOSIT transaction.",
+        "description": "Credits the wallet immediately, in the wallet's currency, and records a DEPOSIT transaction.",
         "operationId": "WalletTransactionController_deposit",
         "parameters": [
           {
@@ -348,7 +422,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "example": "6720c0f1a2b3c4d5e6f70812",
+              "example": "6720c0f1a2b3c4d5e6f70813",
               "type": "string"
             }
           },
@@ -511,7 +585,7 @@
     },
     "/api/v1/wallets/{walletId}/swaps": {
       "post": {
-        "description": "Converts an amount of one coin into another inside the same wallet at the current FX rate. Rejected if the source balance is insufficient.",
+        "description": "Sells an amount from this wallet and credits the same user's toCurrency wallet at the current FX rate. Rejected if the balance is insufficient.",
         "operationId": "WalletTransactionController_swap",
         "parameters": [
           {
@@ -519,7 +593,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "example": "6720c0f1a2b3c4d5e6f70812",
+              "example": "6720c0f1a2b3c4d5e6f70813",
               "type": "string"
             }
           },
@@ -674,7 +748,7 @@
             }
           }
         },
-        "summary": "Swap between stablecoins",
+        "summary": "Swap into another coin",
         "tags": [
           "Money Movement"
         ]
@@ -682,7 +756,7 @@
     },
     "/api/v1/wallets/{walletId}/transfers": {
       "post": {
-        "description": "Debits the sender in sourceCurrency and credits the recipient in destinationCurrency, converting at the current FX rate when they differ.",
+        "description": "Debits this wallet and credits the recipient wallet. When the two wallets hold different coins, the amount is converted at the current FX rate.",
         "operationId": "WalletTransactionController_transfer",
         "parameters": [
           {
@@ -690,7 +764,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "example": "6720c0f1a2b3c4d5e6f70812",
+              "example": "6720c0f1a2b3c4d5e6f70813",
               "type": "string"
             }
           },
@@ -845,7 +919,7 @@
             }
           }
         },
-        "summary": "Send funds to another wallet",
+        "summary": "Send funds to another user's wallet",
         "tags": [
           "Money Movement"
         ]
@@ -853,11 +927,191 @@
     },
     "/api/v1/wallets/{walletId}/transactions": {
       "get": {
-        "description": "Deposits, swaps and transfers sent or received, newest first. Filter by type, currency (source or destination) and date range.",
+        "description": "Deposits, swaps and transfers in or out of this wallet, newest first. Filter by type, currency (source or destination) and date range.",
         "operationId": "WalletTransactionController_list",
         "parameters": [
           {
             "name": "walletId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "example": "6720c0f1a2b3c4d5e6f70813",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DEPOSIT",
+                "SWAP",
+                "TRANSFER"
+              ]
+            }
+          },
+          {
+            "name": "currency",
+            "required": false,
+            "in": "query",
+            "description": "Matches either the source or the destination currency",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cNGN",
+                "cGHS",
+                "cXAF",
+                "USDx",
+                "EURx"
+              ]
+            }
+          },
+          {
+            "name": "startDate",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound (ISO 8601)",
+            "schema": {
+              "format": "date-time",
+              "example": "2026-10-01T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive upper bound (ISO 8601)",
+            "schema": {
+              "format": "date-time",
+              "example": "2026-10-31T23:59:59Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/TransactionResponseDto"
+                          }
+                        },
+                        "metadata": {
+                          "$ref": "#/components/schemas/PaginationMetaDataDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "type": "number",
+                          "example": 400
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "Invalid query"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Wallet not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "type": "number",
+                          "example": 404
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "Wallet not found"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "List a wallet's transactions",
+        "tags": [
+          "Transactions"
+        ]
+      }
+    },
+    "/api/v1/users/{userId}/transactions": {
+      "get": {
+        "description": "Everything across all of the user's wallets — deposits, swaps, transfers sent and received — newest first. Filter by type, currency and date range.",
+        "operationId": "UserTransactionController_list",
+        "parameters": [
+          {
+            "name": "userId",
             "required": true,
             "in": "path",
             "schema": {
@@ -971,9 +1225,61 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "type": "number",
+                          "example": 400
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "Invalid query"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponseDto"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "type": "number",
+                          "example": 404
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "User not found"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
-        "summary": "List a wallet's transactions",
+        "summary": "List a user's transactions",
         "tags": [
           "Transactions"
         ]
@@ -1055,14 +1361,18 @@
   },
   "info": {
     "title": "Harmattan API",
-    "description": "Multi-currency stablecoin wallet sandbox: wallets, simulated deposits, FX swaps and cross-border transfers across **cNGN, cGHS, cXAF, USDx and EURx**.\n\n### Conventions\n- Every response uses the envelope `{ code, message, data?, metadata?, errors? }`.\n- **Amounts are decimal strings** (e.g. `\"1500.25\"`), never JSON numbers, so no precision is lost to floating point. Each coin has 6 decimal places.\n- Money-moving endpoints require an **`Idempotency-Key`** header. Replaying a key with the same payload returns the original transaction with `200` and `Idempotent-Replayed: true`; reusing it with a different payload returns `422`.\n- FX conversions truncate to the destination coin's smallest unit and record the exact rate applied.\n\n### Quick start\n1. `POST /api/v1/wallets` twice to create a sender and a receiver.\n2. `POST /api/v1/wallets/{walletId}/deposits` to fund the sender.\n3. Try `/swaps` and `/transfers`, then read `/transactions`.",
+    "description": "Stablecoin wallet sandbox: simulated deposits, FX swaps and cross-border transfers across **cNGN, cGHS, cXAF, USDx and EURx**.\n\nEach **user** owns exactly **one wallet per coin**. Money always moves between wallets, and a wallet's coin decides the currency of what it sends or receives.\n\n### Conventions\n- Every response uses the envelope `{ code, message, data?, metadata?, errors? }`.\n- **Amounts are decimal strings** (e.g. `\"1500.25\"`), never JSON numbers, so no precision is lost to floating point. Each coin has 6 decimal places.\n- Money-moving endpoints require an **`Idempotency-Key`** header. Replaying a key with the same payload returns the original transaction with `200` and `Idempotent-Replayed: true`; reusing it with a different payload returns `422`.\n- FX conversions truncate to the destination coin's smallest unit and record the exact rate applied.\n\n### Quick start\n1. `POST /api/v1/users` twice. Each response lists the user's 5 wallets — note their ids.\n2. `POST /api/v1/wallets/{walletId}/deposits` to fund one of the first user's wallets.\n3. `POST /api/v1/wallets/{walletId}/swaps` into another coin, or `/transfers` to one of the second user's wallets (any coin — it converts automatically).\n4. Read `GET /api/v1/users/{userId}` for balances and `/transactions` for history.",
     "version": "1.0.0",
     "contact": {}
   },
   "tags": [
     {
+      "name": "Users",
+      "description": "Create users (each gets one wallet per coin)"
+    },
+    {
       "name": "Wallets",
-      "description": "Create wallets and read balances"
+      "description": "Single-currency wallets"
     },
     {
       "name": "Money Movement",
@@ -1293,9 +1603,17 @@
           "convertedAmount"
         ]
       },
-      "BalanceResponseDto": {
+      "WalletResponseDto": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "example": "6720c0f1a2b3c4d5e6f70813"
+          },
+          "userId": {
+            "type": "string",
+            "example": "6720c0f1a2b3c4d5e6f70812"
+          },
           "currency": {
             "type": "string",
             "enum": [
@@ -1307,7 +1625,7 @@
             ],
             "example": "cNGN"
           },
-          "amount": {
+          "balance": {
             "type": "string",
             "example": "150000.000000"
           },
@@ -1315,15 +1633,23 @@
             "type": "string",
             "description": "Equivalent value in USD",
             "example": "97.88"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-10-29T12:00:00.000Z"
           }
         },
         "required": [
+          "id",
+          "userId",
           "currency",
-          "amount",
-          "usdValue"
+          "balance",
+          "usdValue",
+          "createdAt"
         ]
       },
-      "WalletResponseDto": {
+      "UserResponseDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -1338,15 +1664,16 @@
             "type": "string",
             "example": "+2348012345678"
           },
-          "balances": {
+          "wallets": {
+            "description": "One wallet per supported stablecoin",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/BalanceResponseDto"
+              "$ref": "#/components/schemas/WalletResponseDto"
             }
           },
           "totalUsd": {
             "type": "string",
-            "description": "Sum of all balances valued in USD at current rates",
+            "description": "Sum of all wallet balances valued in USD at current rates",
             "example": "1097.88"
           },
           "createdAt": {
@@ -1357,12 +1684,12 @@
         },
         "required": [
           "id",
-          "balances",
+          "wallets",
           "totalUsd",
           "createdAt"
         ]
       },
-      "CreateWalletDto": {
+      "CreateUserDto": {
         "type": "object",
         "properties": {
           "email": {
@@ -1392,15 +1719,25 @@
               "TRANSFER"
             ]
           },
-          "senderWalletId": {
+          "senderUserId": {
             "type": "string",
             "nullable": true,
             "description": "Null for deposits",
             "example": "6720c0f1a2b3c4d5e6f70812"
           },
+          "senderWalletId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Null for deposits",
+            "example": "6720c0f1a2b3c4d5e6f70813"
+          },
+          "receiverUserId": {
+            "type": "string",
+            "example": "6720c0f1a2b3c4d5e6f70819"
+          },
           "receiverWalletId": {
             "type": "string",
-            "example": "6720c0f1a2b3c4d5e6f70813"
+            "example": "6720c0f1a2b3c4d5e6f70821"
           },
           "sourceCurrency": {
             "type": "string",
@@ -1465,7 +1802,9 @@
         "required": [
           "id",
           "type",
+          "senderUserId",
           "senderWalletId",
+          "receiverUserId",
           "receiverWalletId",
           "sourceCurrency",
           "sourceAmount",
@@ -1481,42 +1820,19 @@
       "DepositDto": {
         "type": "object",
         "properties": {
-          "currency": {
-            "type": "string",
-            "enum": [
-              "cNGN",
-              "cGHS",
-              "cXAF",
-              "USDx",
-              "EURx"
-            ],
-            "example": "cNGN"
-          },
           "amount": {
             "type": "string",
-            "description": "Decimal string, up to 6 decimal places",
+            "description": "Decimal string in the wallet's currency, up to 6 decimal places",
             "example": "250000.00"
           }
         },
         "required": [
-          "currency",
           "amount"
         ]
       },
       "SwapDto": {
         "type": "object",
         "properties": {
-          "fromCurrency": {
-            "type": "string",
-            "enum": [
-              "cNGN",
-              "cGHS",
-              "cXAF",
-              "USDx",
-              "EURx"
-            ],
-            "example": "cNGN"
-          },
           "toCurrency": {
             "type": "string",
             "enum": [
@@ -1526,16 +1842,16 @@
               "USDx",
               "EURx"
             ],
+            "description": "Coin to receive. Credited to the same user's wallet for that coin.",
             "example": "USDx"
           },
           "amount": {
             "type": "string",
-            "description": "Amount of fromCurrency to sell",
+            "description": "Amount to sell, in this wallet's currency",
             "example": "15000.00"
           }
         },
         "required": [
-          "fromCurrency",
           "toCurrency",
           "amount"
         ]
@@ -1545,42 +1861,17 @@
         "properties": {
           "recipientWalletId": {
             "type": "string",
-            "description": "Receiving wallet id",
-            "example": "6720c0f1a2b3c4d5e6f70813"
-          },
-          "sourceCurrency": {
-            "type": "string",
-            "enum": [
-              "cNGN",
-              "cGHS",
-              "cXAF",
-              "USDx",
-              "EURx"
-            ],
-            "description": "Coin debited from the sender",
-            "example": "cNGN"
-          },
-          "destinationCurrency": {
-            "type": "string",
-            "enum": [
-              "cNGN",
-              "cGHS",
-              "cXAF",
-              "USDx",
-              "EURx"
-            ],
-            "description": "Coin credited to the recipient. Defaults to sourceCurrency; converted at the current FX rate when different.",
-            "example": "cGHS"
+            "description": "Receiving wallet id (another user's). Its currency decides what the recipient gets; converted at the current FX rate when it differs.",
+            "example": "6720c0f1a2b3c4d5e6f70820"
           },
           "amount": {
             "type": "string",
-            "description": "Amount of sourceCurrency to send",
+            "description": "Amount to send, in this wallet's currency",
             "example": "50000.00"
           }
         },
         "required": [
           "recipientWalletId",
-          "sourceCurrency",
           "amount"
         ]
       }

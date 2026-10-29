@@ -7,12 +7,9 @@ import { Stablecoin } from '@/enums/stablecoin.enum';
 import { TransactionType } from '@/enums/transaction-type.enum';
 
 export class DepositDto {
-  @ApiProperty({ enum: Stablecoin, example: Stablecoin.CNGN })
-  @IsEnum(Stablecoin)
-  currency!: Stablecoin;
-
   @ApiProperty({
-    description: 'Decimal string, up to 6 decimal places',
+    description:
+      "Decimal string in the wallet's currency, up to 6 decimal places",
     example: '250000.00',
   })
   @IsAmount()
@@ -20,16 +17,17 @@ export class DepositDto {
 }
 
 export class SwapDto {
-  @ApiProperty({ enum: Stablecoin, example: Stablecoin.CNGN })
-  @IsEnum(Stablecoin)
-  fromCurrency!: Stablecoin;
-
-  @ApiProperty({ enum: Stablecoin, example: Stablecoin.USDX })
+  @ApiProperty({
+    enum: Stablecoin,
+    description:
+      "Coin to receive. Credited to the same user's wallet for that coin.",
+    example: Stablecoin.USDX,
+  })
   @IsEnum(Stablecoin)
   toCurrency!: Stablecoin;
 
   @ApiProperty({
-    description: 'Amount of fromCurrency to sell',
+    description: "Amount to sell, in this wallet's currency",
     example: '15000.00',
   })
   @IsAmount()
@@ -38,32 +36,15 @@ export class SwapDto {
 
 export class TransferDto {
   @ApiProperty({
-    description: 'Receiving wallet id',
-    example: '6720c0f1a2b3c4d5e6f70813',
+    description:
+      "Receiving wallet id (another user's). Its currency decides what the recipient gets; converted at the current FX rate when it differs.",
+    example: '6720c0f1a2b3c4d5e6f70820',
   })
   @IsMongoId()
   recipientWalletId!: string;
 
   @ApiProperty({
-    enum: Stablecoin,
-    description: 'Coin debited from the sender',
-    example: Stablecoin.CNGN,
-  })
-  @IsEnum(Stablecoin)
-  sourceCurrency!: Stablecoin;
-
-  @ApiPropertyOptional({
-    enum: Stablecoin,
-    description:
-      'Coin credited to the recipient. Defaults to sourceCurrency; converted at the current FX rate when different.',
-    example: Stablecoin.CGHS,
-  })
-  @IsOptional()
-  @IsEnum(Stablecoin)
-  destinationCurrency?: Stablecoin;
-
-  @ApiProperty({
-    description: 'Amount of sourceCurrency to send',
+    description: "Amount to send, in this wallet's currency",
     example: '50000.00',
   })
   @IsAmount()

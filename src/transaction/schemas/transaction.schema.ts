@@ -10,10 +10,10 @@ import { TransactionType } from '@/enums/transaction-type.enum';
 export type TransactionDocument = HydratedDocument<Transaction>;
 
 /**
- * Immutable record of one money movement. Every type uses the same shape:
- *   DEPOSIT   sender = null,   receiver = wallet
- *   SWAP      sender = wallet, receiver = wallet
- *   TRANSFER  sender = wallet, receiver = recipient
+ * Immutable record of one money movement between single-currency wallets.
+ *   DEPOSIT   sender = null,              receiver = wallet
+ *   SWAP      sender = user's coin A,     receiver = same user's coin B
+ *   TRANSFER  sender = user's wallet,     receiver = another user's wallet
  */
 @BaseSchemaDecorator({ timestamps: { createdAt: true, updatedAt: false } })
 export class Transaction {
@@ -30,10 +30,24 @@ export class Transaction {
 
   @Prop({
     type: SchemaTypes.ObjectId,
+    ref: DB_TABLE_NAMES.USERS,
+    default: null,
+  })
+  senderUserId!: Types.ObjectId | null;
+
+  @Prop({
+    type: SchemaTypes.ObjectId,
     ref: DB_TABLE_NAMES.WALLETS,
     default: null,
   })
   senderWalletId!: Types.ObjectId | null;
+
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: DB_TABLE_NAMES.USERS,
+    required: true,
+  })
+  receiverUserId!: Types.ObjectId;
 
   @Prop({
     type: SchemaTypes.ObjectId,
@@ -85,3 +99,5 @@ TransactionSchema.index(
 );
 TransactionSchema.index({ senderWalletId: 1, createdAt: -1, _id: -1 });
 TransactionSchema.index({ receiverWalletId: 1, createdAt: -1, _id: -1 });
+TransactionSchema.index({ senderUserId: 1, createdAt: -1, _id: -1 });
+TransactionSchema.index({ receiverUserId: 1, createdAt: -1, _id: -1 });

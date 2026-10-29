@@ -13,7 +13,9 @@ export const DOCS_PATH = '/docs';
 export const OPENAPI_JSON_PATH = '/openapi.json';
 
 const DESCRIPTION = `
-Multi-currency stablecoin wallet sandbox: wallets, simulated deposits, FX swaps and cross-border transfers across **cNGN, cGHS, cXAF, USDx and EURx**.
+Stablecoin wallet sandbox: simulated deposits, FX swaps and cross-border transfers across **cNGN, cGHS, cXAF, USDx and EURx**.
+
+Each **user** owns exactly **one wallet per coin**. Money always moves between wallets, and a wallet's coin decides the currency of what it sends or receives.
 
 ### Conventions
 - Every response uses the envelope \`{ code, message, data?, metadata?, errors? }\`.
@@ -22,9 +24,10 @@ Multi-currency stablecoin wallet sandbox: wallets, simulated deposits, FX swaps 
 - FX conversions truncate to the destination coin's smallest unit and record the exact rate applied.
 
 ### Quick start
-1. \`POST /api/v1/wallets\` twice to create a sender and a receiver.
-2. \`POST /api/v1/wallets/{walletId}/deposits\` to fund the sender.
-3. Try \`/swaps\` and \`/transfers\`, then read \`/transactions\`.
+1. \`POST /api/v1/users\` twice. Each response lists the user's 5 wallets — note their ids.
+2. \`POST /api/v1/wallets/{walletId}/deposits\` to fund one of the first user's wallets.
+3. \`POST /api/v1/wallets/{walletId}/swaps\` into another coin, or \`/transfers\` to one of the second user's wallets (any coin — it converts automatically).
+4. Read \`GET /api/v1/users/{userId}\` for balances and \`/transactions\` for history.
 `;
 
 export const buildOpenApiDocument = (app: INestApplication): OpenAPIObject => {
@@ -35,7 +38,8 @@ export const buildOpenApiDocument = (app: INestApplication): OpenAPIObject => {
     .setDescription(DESCRIPTION.trim())
     .setVersion('1.0.0')
     .addServer(`http://localhost:${port}`, 'Local')
-    .addTag('Wallets', 'Create wallets and read balances')
+    .addTag('Users', 'Create users (each gets one wallet per coin)')
+    .addTag('Wallets', 'Single-currency wallets')
     .addTag('Money Movement', 'Deposits, swaps and transfers (idempotent)')
     .addTag('Transactions', 'Transaction history')
     .addTag('FX Rates', 'Conversion rates between supported stablecoins')

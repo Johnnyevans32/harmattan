@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpStatus,
-  Param,
-  Post,
-  Res,
-} from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param, Res } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ParseObjectIdPipe } from '@/core/pipes/parse-object-id.pipe';
@@ -15,7 +7,6 @@ import {
   ApiErrorResponse,
   ResponseService,
 } from '@/core/response';
-import { CreateWalletDto } from './dto/wallet.dto';
 import { WalletResponseDto } from './dto/wallet-response.dto';
 import { WalletService } from './wallet.service';
 
@@ -24,38 +15,12 @@ import { WalletService } from './wallet.service';
 export class WalletController {
   constructor(private readonly walletService: WalletService) {}
 
-  @Post()
-  @ApiOperation({
-    summary: 'Create a wallet',
-    description:
-      'Creates a multi-currency wallet with a zero balance in every supported stablecoin. An email or phone number can own only one wallet.',
-  })
-  @ApiDataResponse(WalletResponseDto, { status: HttpStatus.CREATED })
-  @ApiErrorResponse(HttpStatus.BAD_REQUEST, 'Validation failed')
-  @ApiErrorResponse(
-    HttpStatus.CONFLICT,
-    'A wallet already exists for this email',
-  )
-  async create(
-    @Body() dto: CreateWalletDto,
-    @Res() res: Response,
-  ): Promise<void> {
-    const wallet = await this.walletService.create(dto);
-    return ResponseService.json(
-      res,
-      HttpStatus.CREATED,
-      'Wallet created successfully',
-      wallet,
-    );
-  }
-
   @Get(':walletId')
   @ApiOperation({
-    summary: 'Get a wallet and its balances',
-    description:
-      'Returns every stablecoin balance plus the total equivalent in USD.',
+    summary: 'Get a wallet',
+    description: 'A single-currency wallet with its balance and USD value.',
   })
-  @ApiParam({ name: 'walletId', example: '6720c0f1a2b3c4d5e6f70812' })
+  @ApiParam({ name: 'walletId', example: '6720c0f1a2b3c4d5e6f70813' })
   @ApiDataResponse(WalletResponseDto)
   @ApiErrorResponse(HttpStatus.NOT_FOUND, 'Wallet not found')
   async findOne(

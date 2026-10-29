@@ -1,6 +1,7 @@
 import { Stablecoin } from '@/enums/stablecoin.enum';
 
 export const DB_TABLE_NAMES = {
+  USERS: 'users',
   WALLETS: 'wallets',
   TRANSACTIONS: 'transactions',
   FX_RATES: 'fx_rates',

@@ -22,6 +22,8 @@ import {
   ApiErrorResponse,
   ResponseService,
 } from '@/core/response';
+import { UserService } from '@/user/user.service';
+import { WalletService } from '@/wallet/wallet.service';
 import {
   DepositDto,
   SwapDto,
@@ -36,7 +38,7 @@ import {
 
 const WALLET_ID_PARAM = {
   name: 'walletId',
-  example: '6720c0f1a2b3c4d5e6f70812',
+  example: '6720c0f1a2b3c4d5e6f70813',
 };
 
 /** Shared OpenAPI docs for the three idempotent money-moving endpoints. */
@@ -63,15 +65,26 @@ const MoneyMovementDocs = () =>
     ),
   );
 
+const HistoryDocs = (summary: string, description: string) =>
+  applyDecorators(
+    ApiTags('Transactions'),
+    ApiOperation({ summary, description }),
+    ApiDataResponse(TransactionResponseDto, { paginated: true }),
+    ApiErrorResponse(HttpStatus.BAD_REQUEST, 'Invalid query'),
+  );
+
 @Controller('wallets/:walletId')
 export class WalletTransactionController {
-  constructor(private readonly transactionService: TransactionService) {}
+  constructor(
+    private readonly transactionService: TransactionService,
+    private readonly walletService: WalletService,
+  ) {}
 
   @Post('deposits')
   @ApiOperation({
     summary: 'Deposit funds (simulated)',
     description:
-      'Credits the wallet immediately and records a DEPOSIT transaction.',
+      "Credits the wallet immediately, in the wallet's currency, and records a DEPOSIT transaction.",
   })
   @MoneyMovementDocs()
   async deposit(
@@ -90,9 +103,9 @@ export class WalletTransactionController {
 
   @Post('swaps')
   @ApiOperation({
-    summary: 'Swap between stablecoins',
+    summary: 'Swap into another coin',
     description:
-      'Converts an amount of one coin into another inside the same wallet at the current FX rate. Rejected if the source balance is insufficient.',
+      "Sells an amount from this wallet and credits the same user's toCurrency wallet at the current FX rate. Rejected if the balance is insufficient.",
   })
   @MoneyMovementDocs()
   async swap(
@@ -111,9 +124,9 @@ export class WalletTransactionController {
 
   @Post('transfers')
   @ApiOperation({
-    summary: 'Send funds to another wallet',
+    summary: "Send funds to another user's wallet",
     description:
-      'Debits the sender in sourceCurrency and credits the recipient in destinationCurrency, converting at the current FX rate when they differ.',
+      'Debits this wallet and credits the recipient wallet. When the two wallets hold different coins, the amount is converted at the current FX rate.',
   })
   @MoneyMovementDocs()
   async transfer(
@@ -131,21 +144,20 @@ export class WalletTransactionController {
   }
 
   @Get('transactions')
-  @ApiTags('Transactions')
-  @ApiOperation({
-    summary: "List a wallet's transactions",
-    description:
-      'Deposits, swaps and transfers sent or received, newest first. Filter by type, currency (source or destination) and date range.',
-  })
+  @HistoryDocs(
+    "List a wallet's transactions",
+    'Deposits, swaps and transfers in or out of this wallet, newest first. Filter by type, currency (source or destination) and date range.',
+  )
   @ApiParam(WALLET_ID_PARAM)
-  @ApiDataResponse(TransactionResponseDto, { paginated: true })
+  @ApiErrorResponse(HttpStatus.NOT_FOUND, 'Wallet not found')
   async list(
     @Param('walletId', ParseObjectIdPipe) walletId: string,
     @Query() query: TransactionQueryDto,
     @Res() res: Response,
   ): Promise<void> {
+    await this.walletService.findByIdOrFail(walletId);
     const { transactions, metadata } = await this.transactionService.list(
-      walletId,
+      { walletId },
       query,
     );
     return ResponseService.json(
@@ -172,6 +184,40 @@ export class WalletTransactionController {
       );
     }
     return ResponseService.json(res, HttpStatus.CREATED, message, transaction);
+  }
+}
+
+@Controller('users/:userId/transactions')
+export class UserTransactionController {
+  constructor(
+    private readonly transactionService: TransactionService,
+    private readonly userService: UserService,
+  ) {}
+
+  @Get()
+  @HistoryDocs(
+    "List a user's transactions",
+    "Everything across all of the user's wallets — deposits, swaps, transfers sent and received — newest first. Filter by type, currency and date range.",
+  )
+  @ApiParam({ name: 'userId', example: '6720c0f1a2b3c4d5e6f70812' })
+  @ApiErrorResponse(HttpStatus.NOT_FOUND, 'User not found')
+  async list(
+    @Param('userId', ParseObjectIdPipe) userId: string,
+    @Query() query: TransactionQueryDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.userService.findByIdOrFail(userId);
+    const { transactions, metadata } = await this.transactionService.list(
+      { userId },
+      query,
+    );
+    return ResponseService.json(
+      res,
+      HttpStatus.OK,
+      'Transactions retrieved successfully',
+      transactions,
+      metadata,
+    );
   }
 }
 

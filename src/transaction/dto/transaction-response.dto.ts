@@ -16,9 +16,20 @@ export class TransactionResponseDto {
     description: 'Null for deposits',
     example: '6720c0f1a2b3c4d5e6f70812',
   })
+  senderUserId!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Null for deposits',
+    example: '6720c0f1a2b3c4d5e6f70813',
+  })
   senderWalletId!: string | null;
 
-  @ApiProperty({ example: '6720c0f1a2b3c4d5e6f70813' })
+  @ApiProperty({ example: '6720c0f1a2b3c4d5e6f70819' })
+  receiverUserId!: string;
+
+  @ApiProperty({ example: '6720c0f1a2b3c4d5e6f70821' })
   receiverWalletId!: string;
 
   @ApiProperty({ enum: Stablecoin, example: Stablecoin.CNGN })
