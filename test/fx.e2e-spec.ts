@@ -2,7 +2,7 @@ import { FxService } from '@/fx/fx.service';
 import { StubFxProvider } from './utils/stub-fx-provider';
 import {
   createTestApp,
-  createWallet,
+  createUser,
   idempotencyKey,
   path,
   type TestContext,
@@ -76,12 +76,12 @@ describe('FX rates', () => {
       ctx.fxProvider.rates = { ...ctx.fxProvider.rates, NGN: '2000' };
       await ctx.app.get(FxService).refresh();
 
-      const walletId = await createWallet(ctx, { USDx: '1' });
+      const user = await createUser(ctx, { USDx: '1' });
       const res = await ctx
         .api()
-        .post(path(`/wallets/${walletId}/swaps`))
+        .post(path(`/wallets/${user.wallets.USDx}/swaps`))
         .set('Idempotency-Key', idempotencyKey())
-        .send({ fromCurrency: 'USDx', toCurrency: 'cNGN', amount: '1' })
+        .send({ toCurrency: 'cNGN', amount: '1' })
         .expect(201);
 
       expect(res.body.data).toMatchObject({
@@ -111,12 +111,12 @@ describe('FX rates', () => {
     });
 
     it('still processes swaps, recording the fallback source', async () => {
-      const walletId = await createWallet(ctx, { USDx: '2' });
+      const user = await createUser(ctx, { USDx: '2' });
       const res = await ctx
         .api()
-        .post(path(`/wallets/${walletId}/swaps`))
+        .post(path(`/wallets/${user.wallets.USDx}/swaps`))
         .set('Idempotency-Key', idempotencyKey())
-        .send({ fromCurrency: 'USDx', toCurrency: 'cNGN', amount: '2' })
+        .send({ toCurrency: 'cNGN', amount: '2' })
         .expect(201);
 
       expect(res.body.data).toMatchObject({

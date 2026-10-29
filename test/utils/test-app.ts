@@ -66,40 +66,56 @@ export const idempotencyKey = () => randomUUID();
 let counter = 0;
 export const uniqueEmail = () => `user${Date.now()}${counter++}@example.com`;
 
-/** Creates a wallet and optionally funds it. Returns the wallet id. */
-export const createWallet = async (
+export interface TestUser {
+  id: string;
+  /** Wallet id per coin, e.g. wallets.cNGN */
+  wallets: Record<string, string>;
+}
+
+/** Creates a user (and their wallets) and optionally funds some wallets. */
+export const createUser = async (
   ctx: TestContext,
   deposits: Record<string, string> = {},
-): Promise<string> => {
+): Promise<TestUser> => {
   const res = await ctx
     .api()
-    .post(path('/wallets'))
+    .post(path('/users'))
     .send({ email: uniqueEmail() })
     .expect(201);
-  const walletId = res.body.data.id as string;
+
+  const user: TestUser = {
+    id: res.body.data.id as string,
+    wallets: Object.fromEntries(
+      (res.body.data.wallets as { id: string; currency: string }[]).map((w) => [
+        w.currency,
+        w.id,
+      ]),
+    ),
+  };
 
   for (const [currency, amount] of Object.entries(deposits)) {
     await ctx
       .api()
-      .post(path(`/wallets/${walletId}/deposits`))
+      .post(path(`/wallets/${user.wallets[currency]}/deposits`))
       .set('Idempotency-Key', idempotencyKey())
-      .send({ currency, amount })
+      .send({ amount })
       .expect(201);
   }
-  return walletId;
+  return user;
 };
 
+/** Balance per coin for a user, e.g. { cNGN: '100.000000', ... } */
 export const getBalances = async (
   ctx: TestContext,
-  walletId: string,
+  userId: string,
 ): Promise<Record<string, string>> => {
   const res = await ctx
     .api()
-    .get(path(`/wallets/${walletId}`))
+    .get(path(`/users/${userId}`))
     .expect(200);
   return Object.fromEntries(
-    (res.body.data.balances as { currency: string; amount: string }[]).map(
-      (b) => [b.currency, b.amount],
+    (res.body.data.wallets as { currency: string; balance: string }[]).map(
+      (w) => [w.currency, w.balance],
     ),
   );
 };
